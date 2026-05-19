@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCR Clipboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <style>
+    /* ===== DESIGN TOKENS ===== */
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-tertiary: #1a1a25;
+      --bg-card: rgba(20, 20, 30, 0.6);
+      --accent-primary: #8b5cf6;
+      --accent-primary-hover: #7c3aed;
+      --accent-secondary: #6366f1;
+      --accent-glow: rgba(139, 92, 246, 0.4);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-subtle: rgba(148, 163, 184, 0.1);
+      --border-accent: rgba(139, 92, 246, 0.3);
+      --success: #10b981;
+      --error: #ef4444;
+      --warning: #f59e0b;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-5: 1.25rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --space-10: 2.5rem;
+      --space-12: 3rem;
+      --space-16: 4rem;
+      --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --text-xs: 0.75rem;
+      --text-sm: 0.875rem;
+      --text-base: 1rem;
+      --text-lg: 1.125rem;
+      --text-xl: 1.25rem;
+      --text-2xl: 1.5rem;
+      --radius-sm: 0.375rem;
+      --radius-md: 0.5rem;
+      --radius-lg: 0.75rem;
+      --radius-xl: 1rem;
+      --radius-2xl: 1.5rem;
+      --radius-full: 9999px;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.3);
+      --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: var(--font-display); background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.6; overflow-x: hidden; }
+    .bg-mesh { position: fixed; inset: 0; z-index: -1; background: radial-gradient(ellipse 80% 50% at 20% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 50%), radial-gradient(ellipse 60% 40% at 80% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%), radial-gradient(ellipse 50% 30% at 50% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%); pointer-events: none; }
+    .bg-mesh::before { content: ''; position: absolute; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E"); opacity: 0.03; pointer-events: none; }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 0 var(--space-6); }
+
+    /* Header */
+    .header { padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); backdrop-filter: blur(12px); background: rgba(10, 10, 15, 0.7); position: sticky; top: 0; z-index: 100; }
+    .header-content { display: flex; align-items: center; justify-content: space-between; }
+    .logo { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: 700; background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-primary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .logo-icon { width: 28px; height: 28px; background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); -webkit-text-fill-color: white; }
+
+    /* Hero */
+    .hero { padding: var(--space-6) 0 var(--space-4); text-align: center; }
+    .hero h1 { font-size: var(--text-xl); font-weight: 800; margin-bottom: var(--space-3); letter-spacing: -0.02em; background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .hero p { font-size: var(--text-xs); color: var(--text-muted); max-width: 500px; margin: 0 auto; }
+
+    /* Main Card */
+    .main-card { background: var(--bg-card); backdrop-filter: blur(20px); border: 1px solid var(--border-subtle); border-radius: var(--radius-2xl); padding: var(--space-5); margin-bottom: var(--space-6); box-shadow: var(--shadow-lg); }
+
+    /* Top Row: Mode Switcher + Controls on one line */
+    .top-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); flex-wrap: nowrap; }
+    .compact-mode-switcher { display: flex; background: var(--bg-tertiary); padding: 3px; border-radius: var(--radius-full); border: 1px solid var(--border-subtle); flex-shrink: 0; align-items: center; height: 34px; }
+    .compact-mode-switcher .mode-btn { width: 26px !important; height: 26px !important; padding: 0 !important; min-width: 26px !important; max-width: 26px !important; flex: none !important; display: flex !important; align-items: center !important; justify-content: center !important; border-radius: 50% !important; }
+    .compact-mode-switcher .mode-icon { font-size: var(--text-xs); }
+    .dropdown-row { flex: 1; display: flex; align-items: center; gap: var(--space-2); }
+    .dropdown-row .dropdown-selector { min-width: 100px; }
+    .dropdown-row .prompt-toggle-inline { flex-shrink: 0; }
+
+    /* Mode Switcher - legacy (hidden) */
+    .mode-switcher { display: none !important; }
+    .mode-btn { flex: 1; padding: var(--space-2) var(--space-3); border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-xs); font-weight: 600; border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); display: flex; align-items: center; justify-content: center; gap: var(--space-1); position: relative; overflow: hidden; }
+    .mode-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%); opacity: 0; transition: opacity var(--transition-fast); border-radius: var(--radius-md); }
+    .mode-btn span { position: relative; z-index: 1; }
+    .mode-btn.active { color: var(--text-primary); box-shadow: var(--shadow-md); }
+    .mode-btn.active::before { opacity: 1; }
+    .mode-btn .mode-icon { font-size: var(--text-base); }
+
+    /* Dropdown Row */
+    .dropdown-row { flex: 1; display: flex; align-items: center; gap: var(--space-2); }
+
+    /* Dropdown Selector */
+    .dropdown-selector { position: relative; }
+    .dropdown-trigger { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-full); color: var(--text-primary); font-family: var(--font-display); font-size: var(--text-sm); font-weight: 600; cursor: pointer; transition: all var(--transition-fast); white-space: nowrap; }
+    .dropdown-trigger:hover { border-color: var(--border-accent); background: var(--bg-secondary); }
+    .dropdown-trigger.open { border-color: var(--accent-primary); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .dropdown-value { }
+    .dropdown-arrow { font-size: 10px; transition: transform var(--transition-fast); color: var(--text-muted); }
+    .dropdown-trigger.open .dropdown-arrow { transform: rotate(180deg); }
+
+    .dropdown-menu { position: absolute; top: calc(100% + var(--space-2)); left: 0; min-width: 100%; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); z-index: 50; overflow: hidden; opacity: 0; transform: translateY(-8px); pointer-events: none; transition: all var(--transition-base); }
+    .dropdown-menu.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .dropdown-item { display: block; width: 100%; padding: var(--space-2) var(--space-4); border: none; background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-sm); text-align: left; cursor: pointer; transition: all var(--transition-fast); }
+    .dropdown-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .dropdown-item.active { color: var(--accent-primary); background: rgba(139, 92, 246, 0.1); font-weight: 600; }
+    .dropdown-item.active::after { content: '✓'; float: right; }
+
+    /* Prompt Toggle Inline */
+    .prompt-toggle-inline { padding: var(--space-2) var(--space-3); background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-full); color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-sm); cursor: pointer; transition: all var(--transition-fast); white-space: nowrap; }
+    .prompt-toggle-inline:hover { border-color: var(--border-accent); color: var(--text-primary); }
+    .prompt-toggle-inline.active { border-color: var(--accent-primary); color: var(--accent-primary); background: rgba(139, 92, 246, 0.1); }
+
+    /* Prompt Editor */
+    .prompt-editor { margin-bottom: var(--space-4); display: none !important; }
+    .prompt-editor.visible { display: block !important; }
+    .prompt-editor-label { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: var(--space-2); display: block; }
+    .prompt-editor textarea { width: 100%; min-height: 80px; padding: var(--space-3); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); color: var(--text-primary); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; resize: vertical; transition: border-color var(--transition-fast); }
+    .prompt-editor textarea:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+    /* Canvas */
+    .canvas-container { display: none; flex-direction: column; gap: var(--space-3); }
+    .canvas-container.active { display: flex; }
+    .drop-zone-container { display: block; }
+    .drop-zone-container.hidden { display: none; }
+    .canvas-wrapper { position: relative; border: 2px solid var(--border-subtle); border-radius: var(--radius-xl); background: #ffffff; overflow: hidden; touch-action: none; }
+    .canvas-wrapper canvas { display: block; width: 100%; cursor: crosshair; }
+    .canvas-toolbar { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); flex-wrap: wrap; }
+    .canvas-toolbar-label { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    .canvas-tool-btn { padding: var(--space-1) var(--space-2); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-xs); font-weight: 500; border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); display: flex; align-items: center; gap: var(--space-1); }
+    .canvas-tool-btn:hover { background: var(--bg-secondary); border-color: var(--border-accent); color: var(--text-primary); }
+    .canvas-tool-btn.active { background: var(--accent-primary); border-color: var(--accent-primary); color: var(--text-primary); }
+    .canvas-tool-btn.danger:hover { border-color: var(--error); color: var(--error); }
+    .stroke-width-slider { -webkit-appearance: none; appearance: none; width: 80px; height: 4px; background: var(--bg-secondary); border-radius: var(--radius-full); outline: none; }
+    .stroke-width-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-primary); cursor: pointer; box-shadow: 0 0 4px var(--accent-glow); }
+    .stroke-width-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent-primary); cursor: pointer; border: none; }
+    .color-picker-group { display: flex; gap: var(--space-1); align-items: center; }
+    .color-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all var(--transition-fast); }
+    .color-dot:hover { transform: scale(1.2); }
+    .color-dot.active { border-color: var(--accent-primary); box-shadow: 0 0 6px var(--accent-glow); }
+
+    /* Drop Zone */
+    .drop-zone { position: relative; border: 2px dashed var(--border-subtle); border-radius: var(--radius-xl); padding: var(--space-6); text-align: center; transition: all var(--transition-base); cursor: pointer; background: rgba(20, 20, 30, 0.3); overflow: hidden; }
+    .drop-zone::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%); opacity: 0; transition: opacity var(--transition-base); }
+    .drop-zone:hover { border-color: var(--border-accent); background: rgba(20, 20, 30, 0.5); }
+    .drop-zone.drag-over { border-color: var(--accent-primary); box-shadow: 0 0 0 4px var(--accent-glow), var(--shadow-glow); transform: scale(1.01); }
+    .drop-zone.drag-over::before { opacity: 1; }
+    .drop-zone.has-image { padding: var(--space-4); border-style: solid; }
+    .drop-zone-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
+    .drop-zone-icon { font-size: 36px; opacity: 0.5; transition: all var(--transition-base); }
+    .drop-zone:hover .drop-zone-icon { opacity: 1; transform: scale(1.1); }
+    .drop-zone-text { color: var(--text-secondary); font-size: var(--text-sm); }
+    .drop-zone-hint { color: var(--text-muted); font-size: var(--text-xs); }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-zone-preview { max-width: 100%; max-height: 300px; border-radius: var(--radius-md); display: none; }
+    .drop-zone.has-image .drop-zone-preview { display: block; margin: 0 auto; }
+    .drop-zone.has-image .drop-zone-content { display: none; }
+    .pdf-file-preview { display: none; color: var(--text-primary); font-family: var(--font-mono); font-size: var(--text-sm); padding: var(--space-5); word-break: break-word; }
+    .drop-zone.has-image .pdf-file-preview { display: block; }
+    .drop-zone-clear { position: absolute; top: var(--space-2); right: var(--space-2); width: 28px; height: 28px; border-radius: 50%; background: var(--error); color: white; border: none; font-size: 14px; cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 10; transition: all var(--transition-fast); }
+    .drop-zone.has-image .drop-zone-clear { display: flex; }
+    .drop-zone-clear:hover { transform: scale(1.1); }
+    .pdf-options { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); flex-wrap: wrap; }
+    .pdf-range-field { display: flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); }
+    .pdf-range-field input { width: 90px; padding: var(--space-2); background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); color: var(--text-primary); font-family: var(--font-mono); font-size: var(--text-sm); }
+    .pdf-range-field input:focus { outline: none; border-color: var(--accent-primary); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .pdf-progress { display: none; margin-top: var(--space-4); padding: var(--space-3); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+    .pdf-progress.visible { display: block; }
+    .pdf-progress-header { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--text-secondary); font-size: var(--text-xs); margin-bottom: var(--space-2); }
+    .pdf-progress-track { height: 8px; overflow: hidden; background: var(--bg-secondary); border-radius: var(--radius-full); }
+    .pdf-progress-bar { width: 0%; height: 100%; background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%); border-radius: var(--radius-full); transition: width var(--transition-base); }
+
+    /* OCR Button */
+    .ocr-btn { width: 100%; padding: var(--space-4); border: none; background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%); color: white; font-family: var(--font-display); font-size: var(--text-base); font-weight: 700; border-radius: var(--radius-lg); cursor: pointer; transition: all var(--transition-base); position: relative; overflow: hidden; margin-top: var(--space-4); }
+    .ocr-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, var(--accent-primary-hover) 0%, var(--accent-primary) 100%); opacity: 0; transition: opacity var(--transition-base); }
+    .ocr-btn:hover::before { opacity: 1; }
+    .ocr-btn span { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
+    .ocr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ocr-btn:disabled::before { display: none; }
+    .ocr-btn .spinner { display: none; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    .ocr-btn.loading .spinner { display: inline-block; }
+    .ocr-btn.loading .btn-text { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Result Area */
+    .result-area { margin-top: var(--space-4); display: none; }
+    .result-area.visible { display: block; }
+    .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-2); }
+    .result-label { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .result-actions { display: flex; gap: var(--space-2); }
+    .result-action-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-xs); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); display: flex; align-items: center; gap: var(--space-1); }
+    .result-action-btn:hover { border-color: var(--border-accent); color: var(--text-primary); }
+    .result-action-btn.copied { border-color: var(--success); color: var(--success); }
+    .result-action-btn.active { border-color: var(--accent-primary); color: var(--accent-primary); background: rgba(139, 92, 246, 0.1); }
+    .result-action-btn.hidden { display: none; }
+    .result-content { background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.8; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; }
+    .result-content::-webkit-scrollbar { width: 6px; }
+    .result-content::-webkit-scrollbar-track { background: transparent; }
+    .result-content::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: var(--radius-full); }
+    .result-content::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* History */
+    .history-area { margin-top: var(--space-5); border-top: 1px solid var(--border-subtle); padding-top: var(--space-4); }
+    .history-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+    .history-title { font-size: var(--text-xs); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .history-clear-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-xs); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast); }
+    .history-clear-btn:hover { border-color: var(--error); color: var(--error); }
+    .history-list { display: flex; flex-direction: column; gap: var(--space-2); }
+    .history-empty { color: var(--text-muted); font-size: var(--text-sm); padding: var(--space-4); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); text-align: center; }
+    .history-item { display: grid; grid-template-columns: 1fr auto; gap: var(--space-3); align-items: center; padding: var(--space-3); background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+    .history-main { min-width: 0; }
+    .history-name { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-meta { color: var(--text-muted); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-actions { display: flex; gap: var(--space-2); }
+    .history-action-btn { padding: var(--space-1) var(--space-3); border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: var(--font-display); font-size: var(--text-xs); border-radius: var(--radius-md); cursor: pointer; white-space: nowrap; transition: all var(--transition-fast); }
+    .history-action-btn:hover { border-color: var(--border-accent); color: var(--text-primary); }
+
+    /* Toast */
+    .toast { position: fixed; bottom: var(--space-6); left: 50%; transform: translateX(-50%) translateY(100px); background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: var(--text-primary); padding: var(--space-3) var(--space-6); border-radius: var(--radius-lg); font-size: var(--text-sm); box-shadow: var(--shadow-lg); z-index: 1000; transition: transform var(--transition-base); }
+    .toast.visible { transform: translateX(-50%) translateY(0); }
+
+    /* Footer */
+    .footer { text-align: center; padding: var(--space-6) 0; color: var(--text-muted); font-size: var(--text-xs); }
+    .footer a { color: var(--accent-primary); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .container { padding: 0 var(--space-4); }
+      .main-card { padding: var(--space-4); }
+      .dropdown-row { gap: var(--space-2); }
+      .dropdown-trigger { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-mesh"></div>
+
+  <header class="header">
+    <div class="container header-content">
+      <div class="logo">
+        <div class="logo-icon">📋</div>
+        <span>ocr</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="main-card">
+      <!-- Compact Mode Switcher + Controls Row -->
+      <div class="top-row">
+        <div class="compact-mode-switcher">
+          <button class="mode-btn active" data-mode="image" onclick="switchMode('image')">
+            <span class="mode-icon">🖼️</span>
+          </button>
+          <button class="mode-btn" data-mode="canvas" onclick="switchMode('canvas')">
+            <span class="mode-icon">✍️</span>
+          </button>
+          <button class="mode-btn" data-mode="pdf" onclick="switchMode('pdf')">
+            <span class="mode-icon">📄</span>
+          </button>
+        </div>
+
+        <!-- Dropdown Row: Format + Model + Prompt Toggle -->
+        <div class="dropdown-row">
+        <div class="dropdown-selector format-dropdown">
+          <button class="dropdown-trigger" id="formatTrigger">
+            <span class="dropdown-value">LaTeX</span>
+            <span class="dropdown-arrow">▼</span>
+          </button>
+          <div class="dropdown-menu" id="formatMenu">
+            <button class="dropdown-item" data-format="plain"><span>纯文本</span></button>
+            <button class="dropdown-item" data-format="markdown"><span>Markdown</span></button>
+            <button class="dropdown-item active" data-format="tex"><span>LaTeX</span></button>
+            <button class="dropdown-item" data-format="formula"><span>公式识别</span></button>
+          </div>
+        </div>
+        <div class="dropdown-selector model-dropdown">
+          <button class="dropdown-trigger" id="modelTrigger">
+            <span class="dropdown-value">mimo-v2.5</span>
+            <span class="dropdown-arrow">▼</span>
+          </button>
+          <div class="dropdown-menu" id="modelMenu">
+            <button class="dropdown-item model-item" data-model="qwen3-vl-flash">qwen3-vl-flash</button>
+            <button class="dropdown-item model-item" data-model="qwen3-vl-plus">qwen3-vl-plus</button>
+            <button class="dropdown-item model-item" data-model="qwen3.5-flash">qwen3.5-flash</button>
+            <button class="dropdown-item model-item" data-model="qwen3.5-plus">qwen3.5-plus</button>
+            <button class="dropdown-item model-item" data-model="qwen3.5-omni-flash">qwen3.5-omni-flash</button>
+            <button class="dropdown-item model-item" data-model="qwen-vl-plus">qwen-vl-plus</button>
+            <button class="dropdown-item model-item" data-model="qwen-vl-max">qwen-vl-max</button>
+            <button class="dropdown-item model-item active" data-model="mimo-v2.5">mimo-v2.5</button>
+            <button class="dropdown-item model-item" data-model="google/gemini-3.1-flash-lite">gemini-3.1-flash-lite</button>
+          </div>
+        </div>
+        <button class="prompt-toggle-inline" id="promptToggle">✏️ 自定义</button>
+      </div>
+      </div>
+
+      <!-- Prompt Editor (hidden by default) -->
+      <div class="prompt-editor" id="promptEditor">
+        <label class="prompt-editor-label">自定义系统提示词</label>
+        <textarea id="promptTextarea" placeholder="输入自定义系统提示词，留空则使用默认提示词..."></textarea>
+      </div>
+
+      <!-- Drop Zone (Image Input) -->
+      <div class="drop-zone-container" id="dropZoneContainer">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept="image/*">
+          <div class="drop-zone-content">
+            <div class="drop-zone-icon">📤</div>
+            <div class="drop-zone-text">拖拽图片到此处，或点击上传</div>
+            <div class="drop-zone-hint">支持粘贴 (Ctrl+V)</div>
+          </div>
+          <img class="drop-zone-preview" id="dropZonePreview" alt="Preview">
+          <button class="drop-zone-clear" id="dropZoneClear" title="清除图片">×</button>
+        </div>
+      </div>
+
+      <!-- PDF Input -->
+      <div class="drop-zone-container hidden" id="pdfZoneContainer">
+        <div class="drop-zone" id="pdfDropZone">
+          <input type="file" id="pdfInput" accept="application/pdf,.pdf">
+          <div class="drop-zone-content" id="pdfDropContent">
+            <div class="drop-zone-icon">📄</div>
+            <div class="drop-zone-text">拖拽 PDF 到此处，或点击上传</div>
+            <div class="drop-zone-hint">每页转图片后识别为 LaTeX，并保存到 outputs</div>
+          </div>
+          <div class="pdf-file-preview" id="pdfFilePreview"></div>
+          <button class="drop-zone-clear" id="pdfZoneClear" title="清除 PDF">×</button>
+        </div>
+        <div class="pdf-options">
+          <label class="pdf-range-field">
+            <span>起始页</span>
+            <input type="number" id="pdfStartPage" min="1" placeholder="1">
+          </label>
+          <label class="pdf-range-field">
+            <span>结束页</span>
+            <input type="number" id="pdfEndPage" min="1" placeholder="全部">
+          </label>
+        </div>
+        <div class="pdf-progress" id="pdfProgress">
+          <div class="pdf-progress-header">
+            <span id="pdfProgressStatus">等待开始</span>
+            <span id="pdfProgressCount">0/0</span>
+          </div>
+          <div class="pdf-progress-track">
+            <div class="pdf-progress-bar" id="pdfProgressBar"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas (Formula Input) -->
+      <div class="canvas-container" id="canvasContainer">
+        <div class="canvas-wrapper" id="canvasWrapper">
+          <canvas id="formulaCanvas" width="800" height="400"></canvas>
+        </div>
+        <div class="canvas-toolbar">
+          <span class="canvas-toolbar-label">工具</span>
+          <button class="canvas-tool-btn active" data-tool="pen" onclick="setTool('pen')">
+            <span>✏️</span><span>画笔</span>
+          </button>
+          <button class="canvas-tool-btn" data-tool="eraser" onclick="setTool('eraser')">
+            <span>🧹</span><span>橡皮</span>
+          </button>
+          <span class="canvas-toolbar-label">粗细</span>
+          <input type="range" class="stroke-width-slider" id="strokeWidth" min="1" max="20" value="3">
+          <span class="canvas-toolbar-label">颜色</span>
+          <div class="color-picker-group">
+            <div class="color-dot active" style="background:#000000" data-color="#000000" onclick="setColor(this)"></div>
+            <div class="color-dot" style="background:#ef4444" data-color="#ef4444" onclick="setColor(this)"></div>
+            <div class="color-dot" style="background:#3b82f6" data-color="#3b82f6" onclick="setColor(this)"></div>
+            <div class="color-dot" style="background:#10b981" data-color="#10b981" onclick="setColor(this)"></div>
+          </div>
+          <button class="canvas-tool-btn" onclick="undoCanvas()">↩️ 撤销</button>
+          <button class="canvas-tool-btn danger" onclick="clearCanvas()">🗑️ 清空</button>
+        </div>
+      </div>
+
+      <!-- OCR Button -->
+      <button class="ocr-btn" id="ocrBtn" onclick="runOCR()">
+        <span>
+          <span class="spinner"></span>
+          <span class="btn-text">🔍 开始识别</span>
+        </span>
+      </button>
+
+      <!-- Result Area -->
+      <div class="result-area" id="resultArea">
+        <div class="result-header">
+          <span class="result-label" id="resultLabel">识别结果</span>
+          <div class="result-actions">
+            <button class="result-action-btn" id="sourceCodeBtn" onclick="toggleSourceCode()">
+              <span>&lt;/&gt;</span><span>源码</span>
+            </button>
+            <button class="result-action-btn hidden" id="openOutputsBtn" onclick="openOutputsFolder()">
+              <span>📂</span><span>输出文件夹</span>
+            </button>
+            <button class="result-action-btn" onclick="copyResult()">
+              <span>📋</span><span>复制</span>
+            </button>
+          </div>
+        </div>
+        <div class="result-content" id="resultContent"></div>
+      </div>
+
+      <!-- OCR History -->
+      <div class="history-area" id="historyArea">
+        <div class="history-header">
+          <span class="history-title">历史记录</span>
+          <button class="history-clear-btn" onclick="clearHistory()">清空</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>Powered by <a href="https://dashscope.aliyuncs.com/" target="_blank">DashScope</a> · <a href="https://openrouter.ai/" target="_blank">OpenRouter</a> · Qwen · MiMo · Gemini</p>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ===== State =====
+    let currentMode = 'image';
+    let currentFormat = 'tex';
+    let currentModel = 'mimo-v2.5';
+    let currentTool = 'pen';
+    let currentColor = '#000000';
+    let strokeWidth = 3;
+    let isDrawing = false;
+    let lastX = 0;
+    let lastY = 0;
+    let canvasHistory = [];
+    let uploadedImage = null; // File object
+    let uploadedPdf = null; // File object
+    let pdfProgressTimer = null;
+    let rawSourceCode = '';
+    let showingSourceCode = false;
+    const HISTORY_STORAGE_KEY = 'ocrClipboardHistory';
+    const MAX_HISTORY_ITEMS = 30;
+
+    // ===== DOM References =====
+    const dropZone = document.getElementById('dropZone');
+    const dropZoneContainer = document.getElementById('dropZoneContainer');
+    const dropZonePreview = document.getElementById('dropZonePreview');
+    const dropZoneClear = document.getElementById('dropZoneClear');
+    const fileInput = document.getElementById('fileInput');
+    const pdfZoneContainer = document.getElementById('pdfZoneContainer');
+    const pdfDropZone = document.getElementById('pdfDropZone');
+    const pdfInput = document.getElementById('pdfInput');
+    const pdfFilePreview = document.getElementById('pdfFilePreview');
+    const pdfZoneClear = document.getElementById('pdfZoneClear');
+    const pdfStartPage = document.getElementById('pdfStartPage');
+    const pdfEndPage = document.getElementById('pdfEndPage');
+    const pdfProgress = document.getElementById('pdfProgress');
+    const pdfProgressStatus = document.getElementById('pdfProgressStatus');
+    const pdfProgressCount = document.getElementById('pdfProgressCount');
+    const pdfProgressBar = document.getElementById('pdfProgressBar');
+    const canvasContainer = document.getElementById('canvasContainer');
+    const canvas = document.getElementById('formulaCanvas');
+    const ctx = canvas.getContext('2d');
+    const ocrBtn = document.getElementById('ocrBtn');
+    const resultArea = document.getElementById('resultArea');
+    const resultContent = document.getElementById('resultContent');
+    const promptEditor = document.getElementById('promptEditor');
+    const promptTextarea = document.getElementById('promptTextarea');
+    const promptToggle = document.getElementById('promptToggle');
+    const toast = document.getElementById('toast');
+    const formatTrigger = document.getElementById('formatTrigger');
+    const formatMenu = document.getElementById('formatMenu');
+    const modelTrigger = document.getElementById('modelTrigger');
+    const modelMenu = document.getElementById('modelMenu');
+    const resultLabel = document.getElementById('resultLabel');
+    const openOutputsBtn = document.getElementById('openOutputsBtn');
+    const historyList = document.getElementById('historyList');
+
+    // ===== Dropdown Logic =====
+    function setupDropdown(trigger, menu, onItemClick) {
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = menu.classList.contains('open');
+        closeAllDropdowns();
+        if (!isOpen) {
+          menu.classList.add('open');
+          trigger.classList.add('open');
+        }
+      });
+
+      menu.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onItemClick(item);
+          menu.classList.remove('open');
+          trigger.classList.remove('open');
+        });
+      });
+    }
+
+    function closeAllDropdowns() {
+      [formatMenu, modelMenu].forEach(menu => {
+        menu.classList.remove('open');
+      });
+      [formatTrigger, modelTrigger].forEach(trigger => {
+        trigger.classList.remove('open');
+      });
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', () => {
+      closeAllDropdowns();
+    });
+
+    // Format dropdown
+    setupDropdown(formatTrigger, formatMenu, (item) => {
+      const format = item.dataset.format;
+      if (!format) return;
+      currentFormat = format;
+      formatMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      formatTrigger.querySelector('.dropdown-value').textContent = item.querySelector('span').textContent;
+    });
+
+    // Model dropdown
+    setupDropdown(modelTrigger, modelMenu, (item) => {
+      const model = item.dataset.model;
+      if (!model) return;
+      setModel(model);
+    });
+
+    // Prevent dropdown close when clicking inside menu
+    [formatMenu, modelMenu].forEach(menu => {
+      menu.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    // ===== Mode Switching =====
+    function setModel(model) {
+      const item = modelMenu.querySelector(`[data-model="${CSS.escape(model)}"]`);
+      if (!item) return;
+      currentModel = model;
+      modelMenu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      modelTrigger.querySelector('.dropdown-value').textContent = item.textContent.trim();
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      if (mode === 'image') {
+        dropZoneContainer.classList.remove('hidden');
+        pdfZoneContainer.classList.add('hidden');
+        canvasContainer.classList.remove('active');
+      } else if (mode === 'canvas') {
+        dropZoneContainer.classList.add('hidden');
+        pdfZoneContainer.classList.add('hidden');
+        canvasContainer.classList.add('active');
+        resizeCanvas();
+      } else {
+        dropZoneContainer.classList.add('hidden');
+        pdfZoneContainer.classList.remove('hidden');
+        canvasContainer.classList.remove('active');
+        setModel('google/gemini-3.1-flash-lite');
+      }
+    }
+
+    // ===== Prompt Toggle =====
+    promptToggle.addEventListener('click', () => {
+      const isVisible = promptEditor.classList.contains('visible');
+      promptEditor.classList.toggle('visible');
+      promptToggle.classList.toggle('active');
+    });
+
+    // ===== Canvas Setup =====
+    function resizeCanvas() {
+      const wrapper = document.getElementById('canvasWrapper');
+      const rect = wrapper.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = 400 * dpr;
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = '400px';
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, rect.width, 400);
+      saveCanvasState();
+    }
+
+    function getCanvasPos(e) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+
+    function startDrawing(e) {
+      isDrawing = true;
+      const pos = getCanvasPos(e);
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function draw(e) {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const pos = getCanvasPos(e);
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = currentTool === 'eraser' ? '#ffffff' : currentColor;
+      ctx.lineWidth = currentTool === 'eraser' ? strokeWidth * 3 : strokeWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      lastX = pos.x;
+      lastY = pos.y;
+    }
+
+    function stopDrawing() {
+      if (isDrawing) {
+        isDrawing = false;
+        saveCanvasState();
+      }
+    }
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDrawing);
+    canvas.addEventListener('mouseleave', stopDrawing);
+    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing);
+
+    function setTool(tool) {
+      currentTool = tool;
+      document.querySelectorAll('.canvas-tool-btn[data-tool]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tool === tool);
+      });
+    }
+
+    function setColor(el) {
+      currentColor = el.dataset.color;
+      document.querySelectorAll('.color-dot').forEach(dot => dot.classList.remove('active'));
+      el.classList.add('active');
+    }
+
+    document.getElementById('strokeWidth').addEventListener('input', (e) => {
+      strokeWidth = parseInt(e.target.value);
+    });
+
+    // ===== Canvas History (Undo) =====
+    function saveCanvasState() {
+      const wrapper = document.getElementById('canvasWrapper');
+      const rect = wrapper.getBoundingClientRect();
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = rect.width;
+      tempCanvas.height = 400;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(canvas, 0, 0, rect.width, 400);
+      canvasHistory.push(tempCanvas.toDataURL());
+      if (canvasHistory.length > 50) canvasHistory.shift();
+    }
+
+    function undoCanvas() {
+      if (canvasHistory.length <= 1) return;
+      canvasHistory.pop();
+      const img = new Image();
+      img.onload = () => {
+        const wrapper = document.getElementById('canvasWrapper');
+        const rect = wrapper.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, 400);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = canvasHistory[canvasHistory.length - 1];
+    }
+
+    function clearCanvas() {
+      const wrapper = document.getElementById('canvasWrapper');
+      const rect = wrapper.getBoundingClientRect();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, rect.width, 400);
+      saveCanvasState();
+      showToast('画布已清空');
+    }
+
+    // ===== Ctrl+Z Undo =====
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && currentMode === 'canvas') {
+        e.preventDefault();
+        undoCanvas();
+      }
+    });
+
+    // ===== Image Upload =====
+    dropZone.addEventListener('click', () => {
+      if (!dropZone.classList.contains('has-image')) {
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    // Drag & Drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    // Paste
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData.items;
+      for (let item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          handleFile(file);
+          switchMode('image');
+          break;
+        }
+      }
+    });
+
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('请上传图片文件');
+        return;
+      }
+      uploadedImage = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        dropZonePreview.src = e.target.result;
+        dropZone.classList.add('has-image');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    dropZoneClear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      uploadedImage = null;
+      dropZonePreview.src = '';
+      dropZone.classList.remove('has-image');
+      fileInput.value = '';
+    });
+
+    // ===== PDF Upload =====
+    pdfDropZone.addEventListener('click', () => {
+      if (!pdfDropZone.classList.contains('has-image')) {
+        pdfInput.click();
+      }
+    });
+
+    pdfInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handlePdfFile(e.target.files[0]);
+      }
+    });
+
+    pdfDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      pdfDropZone.classList.add('drag-over');
+    });
+    pdfDropZone.addEventListener('dragleave', () => {
+      pdfDropZone.classList.remove('drag-over');
+    });
+    pdfDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      pdfDropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        handlePdfFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    function handlePdfFile(file) {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (!isPdf) {
+        showToast('请上传 PDF 文件');
+        return;
+      }
+      uploadedPdf = file;
+      pdfFilePreview.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+      pdfDropZone.classList.add('has-image');
+    }
+
+    pdfZoneClear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      uploadedPdf = null;
+      pdfFilePreview.textContent = '';
+      pdfDropZone.classList.remove('has-image');
+      pdfInput.value = '';
+      pdfStartPage.value = '';
+      pdfEndPage.value = '';
+      resetPdfProgress();
+    });
+
+    // ===== OCR API Call =====
+    async function runOCR() {
+      if (currentMode === 'pdf') {
+        await runPdfOCR();
+        return;
+      }
+
+      let imageData = null;
+
+      if (currentMode === 'image') {
+        if (!uploadedImage) {
+          showToast('请先选择或粘贴一张图片');
+          return;
+        }
+        imageData = uploadedImage;
+      } else {
+        // Canvas mode - convert to blob
+        const tempCanvas = document.createElement('canvas');
+        const dpr = window.devicePixelRatio || 1;
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(canvas, 0, 0);
+        const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'));
+        imageData = new File([blob], 'formula.png', { type: 'image/png' });
+      }
+
+      // Check custom prompt
+      const customPrompt = promptEditor.classList.contains('visible') ? promptTextarea.value.trim() : '';
+
+      const formData = new FormData();
+      formData.append('image', imageData);
+      formData.append('format', currentFormat);
+      formData.append('model', currentModel);
+      if (customPrompt) {
+        formData.append('prompt', customPrompt);
+      }
+
+      ocrBtn.classList.add('loading');
+      ocrBtn.disabled = true;
+
+      try {
+        const response = await fetch('/api/ocr', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          rawSourceCode = data.text;
+          resultContent.textContent = data.text;
+          resultLabel.textContent = '识别结果';
+          openOutputsBtn.classList.add('hidden');
+          resultArea.classList.add('visible');
+          saveHistoryEntry({
+            type: currentMode,
+            title: currentMode === 'canvas' ? '手写笔迹' : (uploadedImage ? uploadedImage.name : '图片 OCR'),
+            format: currentFormat,
+            model: currentModel,
+            text: data.text
+          });
+          showToast('识别完成！');
+          // Render KaTeX if formula mode
+          if (currentFormat === 'tex' || currentFormat === 'formula') {
+            renderMathInElement(resultContent, {
+              delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+              ],
+              throwOnError: false
+            });
+          }
+        } else {
+          showToast('识别失败: ' + (data.text || data.detail || '未知错误'));
+        }
+      } catch (err) {
+        showToast('网络错误: ' + err.message);
+      } finally {
+        ocrBtn.classList.remove('loading');
+        ocrBtn.disabled = false;
+      }
+    }
+
+    async function runPdfOCR() {
+      if (!uploadedPdf) {
+        showToast('请先选择一个 PDF 文件');
+        return;
+      }
+
+      const customPrompt = promptEditor.classList.contains('visible') ? promptTextarea.value.trim() : '';
+      const startPage = pdfStartPage.value.trim();
+      const endPage = pdfEndPage.value.trim();
+      if (startPage && Number(startPage) < 1) {
+        showToast('起始页必须大于等于 1');
+        return;
+      }
+      if (endPage && Number(endPage) < 1) {
+        showToast('结束页必须大于等于 1');
+        return;
+      }
+      if (startPage && endPage && Number(startPage) > Number(endPage)) {
+        showToast('起始页不能大于结束页');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('pdf', uploadedPdf);
+      formData.append('model', currentModel);
+      if (startPage) {
+        formData.append('start_page', startPage);
+      }
+      if (endPage) {
+        formData.append('end_page', endPage);
+      }
+      if (customPrompt) {
+        formData.append('prompt', customPrompt);
+      }
+
+      ocrBtn.classList.add('loading');
+      ocrBtn.disabled = true;
+      openOutputsBtn.classList.add('hidden');
+      rawSourceCode = '';
+      resultContent.textContent = '';
+      resultLabel.textContent = 'PDF OCR 进行中';
+      resultArea.classList.add('visible');
+      updatePdfProgress({ processed_pages: 0, total_pages: 0, status: 'queued' });
+
+      try {
+        const response = await fetch('/api/pdf-ocr', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          updatePdfProgress(data);
+          pollPdfJob(data.job_id);
+          showToast('PDF OCR 已开始');
+        } else {
+          showToast('PDF 识别失败: ' + (data.text || data.detail || '未知错误'));
+          finishPdfLoading();
+        }
+      } catch (err) {
+        showToast('网络错误: ' + err.message);
+        finishPdfLoading();
+      }
+    }
+
+    function resetPdfProgress() {
+      if (pdfProgressTimer) {
+        clearTimeout(pdfProgressTimer);
+        pdfProgressTimer = null;
+      }
+      pdfProgress.classList.remove('visible');
+      pdfProgressStatus.textContent = '等待开始';
+      pdfProgressCount.textContent = '0/0';
+      pdfProgressBar.style.width = '0%';
+    }
+
+    function updatePdfProgress(data) {
+      const processed = Number(data.processed_pages || 0);
+      const total = Number(data.total_pages || 0);
+      const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+      const statusText = {
+        queued: '等待开始',
+        running: data.current_page ? `正在识别第 ${data.current_page} 页` : '正在识别',
+        completed: '识别完成',
+        failed: '识别失败'
+      }[data.status] || '正在处理';
+
+      pdfProgress.classList.add('visible');
+      pdfProgressStatus.textContent = statusText;
+      pdfProgressCount.textContent = `${processed}/${total}`;
+      pdfProgressBar.style.width = `${Math.min(percent, 100)}%`;
+    }
+
+    async function pollPdfJob(jobId) {
+      try {
+        const response = await fetch(`/api/pdf-ocr/${jobId}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          showToast('PDF 识别失败: ' + (data.text || data.detail || '未知错误'));
+          updatePdfProgress({ ...data, status: 'failed' });
+          finishPdfLoading();
+          return;
+        }
+
+        updatePdfProgress(data);
+        if (data.status === 'completed') {
+          rawSourceCode = data.text;
+          resultContent.textContent = data.text;
+          resultLabel.textContent = `PDF LaTeX · ${data.start_page}-${data.end_page} 页 · ${data.output_file}`;
+          openOutputsBtn.classList.remove('hidden');
+          saveHistoryEntry({
+            type: 'pdf',
+            title: uploadedPdf ? uploadedPdf.name : 'PDF OCR',
+            format: 'tex',
+            model: data.model || currentModel,
+            text: data.text,
+            pageRange: `${data.start_page}-${data.end_page}`,
+            outputFile: data.output_file
+          });
+          finishPdfLoading();
+          showToast('PDF 识别完成，已保存到 outputs');
+          return;
+        }
+        if (data.status === 'failed') {
+          showToast('PDF 识别失败: ' + (data.text || '未知错误'));
+          finishPdfLoading();
+          return;
+        }
+
+        pdfProgressTimer = setTimeout(() => pollPdfJob(jobId), 1000);
+      } catch (err) {
+        showToast('进度查询失败: ' + err.message);
+        finishPdfLoading();
+      }
+    }
+
+    function finishPdfLoading() {
+      if (pdfProgressTimer) {
+        clearTimeout(pdfProgressTimer);
+        pdfProgressTimer = null;
+      }
+      ocrBtn.classList.remove('loading');
+      ocrBtn.disabled = false;
+    }
+
+    // ===== OCR History =====
+    function getHistory() {
+      try {
+        const history = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || '[]');
+        return Array.isArray(history) ? history : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function setHistory(history) {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, MAX_HISTORY_ITEMS)));
+    }
+
+    function saveHistoryEntry(entry) {
+      const history = getHistory();
+      const savedEntry = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        createdAt: new Date().toISOString(),
+        type: entry.type,
+        title: entry.title,
+        format: entry.format,
+        model: entry.model,
+        text: entry.text,
+        pageRange: entry.pageRange || '',
+        outputFile: entry.outputFile || ''
+      };
+      history.unshift(savedEntry);
+      try {
+        setHistory(history);
+        renderHistory();
+      } catch {
+        showToast('历史保存失败，浏览器存储空间可能不足');
+      }
+    }
+
+    function typeLabel(type) {
+      return {
+        image: '图片',
+        canvas: '手写',
+        pdf: 'PDF'
+      }[type] || 'OCR';
+    }
+
+    function formatTime(isoString) {
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderHistory() {
+      const history = getHistory();
+      if (!history.length) {
+        historyList.innerHTML = '<div class="history-empty">暂无历史记录</div>';
+        return;
+      }
+
+      historyList.innerHTML = history.map(item => {
+        const metaParts = [
+          typeLabel(item.type),
+          item.format || 'tex',
+          item.model || '',
+          item.pageRange ? `页码 ${item.pageRange}` : '',
+          item.outputFile || '',
+          formatTime(item.createdAt)
+        ].filter(Boolean);
+        return `
+          <div class="history-item">
+            <div class="history-main">
+              <div class="history-name">${escapeHtml(item.title || 'OCR 结果')}</div>
+              <div class="history-meta">${escapeHtml(metaParts.join(' · '))}</div>
+            </div>
+            <div class="history-actions">
+              <button class="history-action-btn" onclick="loadHistoryEntry('${item.id}')">查看</button>
+              <button class="history-action-btn" onclick="copyHistorySource('${item.id}')">复制源码</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function findHistoryEntry(id) {
+      return getHistory().find(item => item.id === id);
+    }
+
+    function loadHistoryEntry(id) {
+      const item = findHistoryEntry(id);
+      if (!item) return;
+      rawSourceCode = item.text || '';
+      showingSourceCode = true;
+      resultContent.textContent = rawSourceCode;
+      resultLabel.textContent = `${typeLabel(item.type)} 历史 · ${item.title || 'OCR 结果'}`;
+      resultArea.classList.add('visible');
+      openOutputsBtn.classList.toggle('hidden', !item.outputFile);
+      document.getElementById('sourceCodeBtn').classList.add('active');
+      showToast('已载入历史源码');
+    }
+
+    function copyHistorySource(id) {
+      const item = findHistoryEntry(id);
+      if (!item) return;
+      navigator.clipboard.writeText(item.text || '').then(() => {
+        showToast('历史源码已复制');
+      }).catch(() => {
+        showToast('复制失败');
+      });
+    }
+
+    function clearHistory() {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      renderHistory();
+      showToast('历史记录已清空');
+    }
+
+    async function openOutputsFolder() {
+      try {
+        const response = await fetch('/api/open-outputs', { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+          showToast('已打开输出文件夹');
+        } else {
+          showToast('打开失败: ' + (data.text || '未知错误'));
+        }
+      } catch (err) {
+        showToast('网络错误: ' + err.message);
+      }
+    }
+
+    // ===== Copy Result =====
+    function copyResult() {
+      const text = rawSourceCode;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector('.result-action-btn:last-child');
+        btn.classList.add('copied');
+        btn.querySelector('span:last-child').textContent = '已复制';
+        showToast('已复制到剪贴板');
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.querySelector('span:last-child').textContent = '复制';
+        }, 2000);
+      }).catch(() => {
+        showToast('复制失败');
+      });
+    }
+
+    // ===== Toggle Source Code =====
+    function toggleSourceCode() {
+      if (!rawSourceCode) return;
+      showingSourceCode = !showingSourceCode;
+      const btn = document.getElementById('sourceCodeBtn');
+      
+      if (showingSourceCode) {
+        resultContent.textContent = rawSourceCode;
+        btn.classList.add('active');
+        showToast('显示源码');
+      } else {
+        resultContent.textContent = rawSourceCode;
+        btn.classList.remove('active');
+        // Re-render KaTeX
+        if (currentFormat === 'tex' || currentFormat === 'formula') {
+          renderMathInElement(resultContent, {
+            delimiters: [
+              {left: '$$', right: '$$', display: true},
+              {left: '$', right: '$', display: false}
+            ],
+            throwOnError: false
+          });
+        }
+        showToast('显示渲染结果');
+      }
+    }
+
+    // ===== Toast =====
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('visible');
+      setTimeout(() => toast.classList.remove('visible'), 2500);
+    }
+
+    // ===== Init =====
+    window.addEventListener('resize', () => {
+      if (currentMode === 'canvas') {
+        // Preserve canvas content on resize
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        resizeCanvas();
+        ctx.putImageData(imageData, 0, 0);
+      }
+    });
+
+    // Initial canvas setup
+    if (currentMode === 'canvas') {
+      resizeCanvas();
+    }
+    renderHistory();
+  </script>
+</body>
+</html>

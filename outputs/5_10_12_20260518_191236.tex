@@ -1,0 +1,115 @@
+\documentclass[UTF8]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xeCJK}
+
+\begin{document}
+
+% Page 1
+\noindent 第五章 \quad 图像复原 \hfill 河海大学
+
+\begin{center}
+    \Huge \textbf{第五章 \quad 图像复原}
+\end{center}
+
+\vspace{1cm}
+
+\noindent \Large \textbf{主要内容：}
+
+\begin{itemize}
+    \item \Large \textbf{5. 1. \quad 概述}
+    \item \Large \textbf{5. 2. \quad 图像降质的数学模型}
+    \item \Large \textbf{5. 3. \quad 无约束图像复原}
+    \item \Large \textbf{5. 4. \quad 约束图像复原}
+    \item \Large \textbf{5. 5. \quad 典型的几何失真校正}
+    \item \Large \textbf{5. 6. \quad 图像几何空间变换}
+\end{itemize}
+
+\vfill
+\noindent 数字图像处理 \hfill $<$ \quad 1 \quad $>$
+
+% Page 2
+5.1 概述 \hfill 河海大学
+
+\section*{5.1. 图像复原概述}
+
+图像降质
+
+\begin{center}
+    \includegraphics[width=0.8\textwidth]{image_process_diagram.png} % 假设图片文件名为 image_process_diagram.png
+    \\
+    如何实现恢复？
+\end{center}
+
+\noindent 脉冲噪声（椒盐噪声） \hfill 复原后图像 \\
+污染后的图像
+
+\noindent 数字图像处理 \hfill < \quad 2 \quad >
+
+% Page 3
+5.1 概述 \hfill 河海大学
+
+\section*{图像降质}
+
+\begin{center}
+    % 此处为示意图占位
+    \text{运动形成的模糊} \quad \xrightarrow{\text{如何实现恢复？}} \quad \text{复原后图像}
+\end{center}
+
+数字图像处理 \hfill < \quad 3 \quad >
+
+% Page 4
+5.1 概述
+
+图像降质
+
+\begin{center}
+    \includegraphics[width=0.8\textwidth]{image_process_diagram.png} % 假设图片文件名为 image_process_diagram.png
+\end{center}
+
+\begin{minipage}{0.45\textwidth}
+    \centering
+    离焦形成的模糊
+\end{minipage}
+\hfill
+\begin{minipage}{0.45\textwidth}
+    \centering
+    复原后图像
+\end{minipage}
+
+数字图像处理 \hfill < \quad 4 \quad >
+
+% Page 5
+5.1 概述
+
+\section*{图像降质}
+
+\begin{itemize}
+    \item 噪声等形成的降质
+    \item 运动引起的降质
+    \item 亚采样引起的降质
+\end{itemize}
+
+\begin{center}
+    \fbox{\parbox{0.25\textwidth}{\centering \color{red} 图像的降质 \\ 或者退化}}
+\end{center}
+
+\begin{enumerate}
+    \item 成像系统的像差、畸变、有限带宽等造成的图像失真；
+    \item 涉嫌辐射、大气测流等造成的照片畸变；
+    \item 携带遥感仪器的飞机或卫星运动的不稳定，以及地球自传等因素引起的照片几何失真；
+    \item 模拟图像在数字化的过程中，由于会损失掉部分细节，因而造成图像质量下降；
+    \item 拍摄时，相机与景物之间的相对运动产生的运动模糊；
+    \item 镜头聚焦不准产生的散焦模糊；
+    \item 底片感光、图像显示时造成记录显示失真；
+    \item 成像系统中存在的噪声干扰。
+\end{enumerate}
+
+数字图像处理 \hfill 5
+\end{document}
