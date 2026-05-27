@@ -4,15 +4,27 @@ import os
 import sys
 import base64
 import tempfile
-from PIL import ImageGrab, Image
+from pathlib import Path
+from PIL import ImageGrab, Image, UnidentifiedImageError
 import pyperclip
+
+BASE_DIR = Path(__file__).resolve().parent
+TEMP_IMAGE_PATHS = set()
+DASHSCOPE_API_KEY_ENVS = (
+    "DASHSCOPE_API_KEY",
+    "QWEN_API_KEY",
+    "ALIYUN_DASHSCOPE_API_KEY",
+)
 
 
 def load_env_file(path=".env"):
-    if not os.path.exists(path):
+    env_path = Path(path)
+    if not env_path.is_absolute():
+        env_path = BASE_DIR / env_path
+    if not env_path.exists():
         return
 
-    with open(path, "r", encoding="utf-8") as env_file:
+    with env_path.open("r", encoding="utf-8") as env_file:
         for line in env_file:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -20,8 +32,39 @@ def load_env_file(path=".env"):
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
+            if key and value and not os.environ.get(key):
                 os.environ[key] = value
+
+
+def get_api_key(env_names):
+    for env_name in env_names:
+        api_key = os.getenv(env_name, "").strip()
+        if api_key:
+            return api_key, env_name
+    return None, None
+
+
+def is_image_file(path):
+    try:
+        with Image.open(path) as image:
+            image.verify()
+        return True
+    except (OSError, UnidentifiedImageError):
+        return False
+
+
+def save_temp_clipboard_image(image):
+    fd, temp_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    image.save(temp_path, "PNG")
+    TEMP_IMAGE_PATHS.add(temp_path)
+    return temp_path
+
+
+def cleanup_temp_image(path):
+    if path in TEMP_IMAGE_PATHS and os.path.exists(path):
+        os.remove(path)
+        TEMP_IMAGE_PATHS.discard(path)
 
 
 def check_clipboard_content():
@@ -30,14 +73,17 @@ def check_clipboard_content():
     返回: ('text', content) 或 ('image', image_path) 或 ('unknown', None)
     """
     # 首先检查是否有图像
-    clipboard_image = ImageGrab.grabclipboard()
-    
-    if clipboard_image is not None:
-        # 剪切板中有图像
-        # 创建临时文件保存图像
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-            clipboard_image.save(temp_file.name, 'PNG')
-            return 'image', temp_file.name
+    clipboard_content = ImageGrab.grabclipboard()
+
+    if isinstance(clipboard_content, Image.Image):
+        # 剪切板中有图像，保存到临时文件以便发送给 OCR API。
+        return 'image', save_temp_clipboard_image(clipboard_content)
+
+    if isinstance(clipboard_content, list):
+        # Windows 复制图片文件时 Pillow 可能返回文件路径列表。
+        for item in clipboard_content:
+            if isinstance(item, str) and os.path.isfile(item) and is_image_file(item):
+                return 'image', item
     
     # 检查是否有文本内容
     try:
@@ -46,7 +92,8 @@ def check_clipboard_content():
             # 检查是否为文件路径
             if os.path.isfile(text_content):
                 try:
-                    Image.open(text_content)
+                    if not is_image_file(text_content):
+                        return 'text', text_content
                     return 'image', text_content
                 except:
                     return 'text', text_content
@@ -70,9 +117,11 @@ def ocr_image(image_path):
     """使用 qwen3-vl 对图片进行 OCR 转换"""
     from openai import OpenAI
 
-    api_key = os.getenv("DASHSCOPE_API_KEY")
+    api_key, _ = get_api_key(DASHSCOPE_API_KEY_ENVS)
     if not api_key:
-        raise RuntimeError("Missing API key. Set DASHSCOPE_API_KEY before running OCR.")
+        raise RuntimeError(
+            f"Missing API key. Set one of: {', '.join(DASHSCOPE_API_KEY_ENVS)}."
+        )
     
     # 初始化OpenAI客户端
     client = OpenAI(
@@ -114,6 +163,7 @@ def ocr_image(image_path):
 
 def main():
     load_env_file()
+    load_env_file(".env.local")
     print("正在从剪切板读取内容...")
     
     # 检查剪切板内容
@@ -133,8 +183,7 @@ def main():
             if not ocr_result or ocr_result.isspace():
                 print("OCR 转换结果为空")
                 # 清理临时图片文件
-                if content_data != sys.argv[0] and os.path.exists(content_data):
-                    os.remove(content_data)
+                cleanup_temp_image(content_data)
                 return 1
             
             print("OCR 转换完成，将结果复制到剪切板")
@@ -147,16 +196,14 @@ def main():
             print(ocr_result)
             
             # 清理临时图片文件
-            if content_data != sys.argv[0] and os.path.exists(content_data):
-                os.remove(content_data)
+            cleanup_temp_image(content_data)
             
             return 0
             
         except Exception as e:
             print(f"OCR 转换失败: {str(e)}")
             # 清理临时图片文件
-            if content_data != sys.argv[0] and content_data and os.path.exists(content_data):
-                os.remove(content_data)
+            cleanup_temp_image(content_data)
             return 1
     else:
         print("剪切板中不是图片或文字内容，退出程序")

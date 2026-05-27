@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 from threading import Lock
 from uuid import uuid4
 
@@ -12,13 +13,27 @@ from fastapi.responses import FileResponse, JSONResponse
 import fitz
 from openai import OpenAI
 
+BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="OCR Web Service")
 PDF_JOBS = {}
 PDF_JOBS_LOCK = Lock()
 
+DASHSCOPE_API_KEY_ENVS = (
+    "DASHSCOPE_API_KEY",
+    "QWEN_API_KEY",
+    "ALIYUN_DASHSCOPE_API_KEY",
+)
+MIMO_API_KEY_ENVS = (
+    "MIMO_API_KEY",
+    "XIAOMI_MIMO_API_KEY",
+)
+OPENROUTER_API_KEY_ENVS = ("OPENROUTER_API_KEY",)
+
 
 def load_env_file(path: str = ".env") -> None:
     env_path = Path(path)
+    if not env_path.is_absolute():
+        env_path = BASE_DIR / env_path
     if not env_path.exists():
         return
 
@@ -29,11 +44,12 @@ def load_env_file(path: str = ".env") -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key and value and not os.environ.get(key):
             os.environ[key] = value
 
 
 load_env_file()
+load_env_file(".env.local")
 
 
 SYSTEM_PROMPTS = {
@@ -107,37 +123,37 @@ LATEX_PREAMBLE = r"""\documentclass[UTF8]{article}
 
 @app.get("/")
 async def index():
-    return FileResponse("index.html")
+    return FileResponse(BASE_DIR / "index.html")
 
 
 MODEL_CONFIG = {
     "qwen3-vl-plus": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "高精度（Qwen3-VL）",
         "enable_thinking_support": True,
     },
     "qwen3-vl-flash": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "快速（Qwen3-VL）",
         "enable_thinking_support": True,
     },
     "qwen3.5-plus": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "最佳质量（Qwen3.5）",
         "enable_thinking_support": True,
     },
     "qwen3.5-flash": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "快速（Qwen3.5）",
         "enable_thinking_support": True,
     },
     "qwen3.5-omni-flash": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "多模态快速（Qwen3.5-Omni）",
         "enable_thinking_support": False,
         "stream_required": True,
@@ -145,25 +161,25 @@ MODEL_CONFIG = {
     },
     "qwen-vl-plus": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "均衡（Qwen2.5-VL）",
         "enable_thinking_support": True,
     },
     "qwen-vl-max": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "api_key_env": "DASHSCOPE_API_KEY",
+        "api_key_env": DASHSCOPE_API_KEY_ENVS,
         "display_name": "高精度（Qwen2.5-VL）",
         "enable_thinking_support": True,
     },
     "mimo-v2.5": {
         "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
-        "api_key_env": "MIMO_API_KEY",
+        "api_key_env": MIMO_API_KEY_ENVS,
         "display_name": "MiMo v2.5",
         "enable_thinking_support": False,
     },
     "google/gemini-3.1-flash-lite": {
         "base_url": "https://openrouter.ai/api/v1",
-        "api_key_env": "OPENROUTER_API_KEY",
+        "api_key_env": OPENROUTER_API_KEY_ENVS,
         "display_name": "Gemini Flash Lite",
         "enable_thinking_support": False,
     },
@@ -180,14 +196,22 @@ def validate_model(model: str) -> None:
         )
 
 
+def get_api_key(env_names: tuple[str, ...]) -> tuple[str | None, str | None]:
+    for env_name in env_names:
+        api_key = os.getenv(env_name, "").strip()
+        if api_key:
+            return api_key, env_name
+    return None, None
+
+
 def build_client(model: str) -> OpenAI:
     model_cfg = MODEL_CONFIG[model]
-    api_key_env = model_cfg["api_key_env"]
-    api_key = os.getenv(api_key_env)
+    api_key_envs = model_cfg["api_key_env"]
+    api_key, _ = get_api_key(api_key_envs)
     if not api_key:
         raise HTTPException(
             status_code=500,
-            detail=f"Missing API key. Set {api_key_env} before starting the server.",
+            detail=f"Missing API key. Set one of: {', '.join(api_key_envs)}.",
         )
     return OpenAI(
         api_key=api_key,
@@ -299,7 +323,7 @@ def build_latex_document(page_texts: list[str], page_numbers: list[int] | None =
 
 
 def output_tex_path(original_filename: str) -> Path:
-    outputs_dir = Path("outputs")
+    outputs_dir = BASE_DIR / "outputs"
     outputs_dir.mkdir(exist_ok=True)
     stem = Path(original_filename or "document").stem
     safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._") or "document"
@@ -308,9 +332,18 @@ def output_tex_path(original_filename: str) -> Path:
 
 
 def outputs_dir_path() -> Path:
-    outputs_dir = Path("outputs")
+    outputs_dir = BASE_DIR / "outputs"
     outputs_dir.mkdir(exist_ok=True)
     return outputs_dir.resolve()
+
+
+def open_path(path: Path) -> None:
+    if sys.platform.startswith("win"):
+        os.startfile(path)  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.run(["open", str(path)], check=True)
+    else:
+        subprocess.run(["xdg-open", str(path)], check=True)
 
 
 def validate_page_range(
@@ -498,7 +531,7 @@ async def pdf_ocr_status_endpoint(job_id: str):
 async def open_outputs_endpoint():
     outputs_dir = outputs_dir_path()
     try:
-        subprocess.run(["open", str(outputs_dir)], check=True)
+        open_path(outputs_dir)
         return {"success": True, "path": str(outputs_dir)}
     except Exception as e:
         return JSONResponse(

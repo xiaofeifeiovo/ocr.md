@@ -10,14 +10,20 @@ Two components share API models and prompts:
 | `server.py` | FastAPI web server (serves `index.html`, provides `POST /api/ocr`) |
 | `index.html` | Single-page UI (drag-drop / paste / upload), pure HTML+CSS+JS, no build step |
 
-Supporting files: `ocr_clipboard.command` (standalone macOS CLI clipboard OCR), `start_server.command` (one-click local server launcher), `framework.md` (original requirements), `qwenomni.md` (Qwen Omni reference notes).
+Supporting files: `ocr_clipboard.command` (standalone CLI clipboard OCR), `start_server.command` (macOS one-click local server launcher), `start_server.bat` (Windows one-click local server launcher), `ocr_clipboard.bat` (Windows clipboard OCR launcher), `framework.md` (original requirements), `qwenomni.md` (Qwen Omni reference notes).
 
 ## Dependencies
 
-**No requirements.txt or pyproject.toml exists.** Install manually:
+Install from `requirements.txt`:
 
 ```
-pip install fastapi uvicorn openai pillow pyperclip
+pip install -r requirements.txt
+```
+
+Or install manually:
+
+```
+pip install fastapi uvicorn openai pillow pyperclip pymupdf python-multipart
 ```
 
 ## Commands
@@ -25,7 +31,9 @@ pip install fastapi uvicorn openai pillow pyperclip
 | Task | Command |
 |---|---|
 | Start web server | `uvicorn server:app --reload --port 8080` (run from project root) |
+| Start web server on Windows | double-click `start_server.bat` |
 | Run clipboard CLI | `python ocr_clipboard.command` or double-click on macOS |
+| Run clipboard CLI on Windows | double-click `ocr_clipboard.bat` |
 
 There are **no** test, lint, typecheck, or build commands configured.
 
@@ -33,10 +41,13 @@ There are **no** test, lint, typecheck, or build commands configured.
 
 - `server.py` defines `MODEL_CONFIG` dict and `SYSTEM_PROMPTS` formats. These are the single source of truth.
 - `index.html` mirrors the model list in its UI. Adding or removing a model in `server.py` requires a matching change in `index.html`.
-- All API keys are **hardcoded** in `server.py` and `ocr_clipboard.command`.
+- API keys are read from environment variables first, then `.env` / `.env.local`.
+- Supported Qwen / DashScope variables: `DASHSCOPE_API_KEY`, `QWEN_API_KEY`, `ALIYUN_DASHSCOPE_API_KEY`.
+- Supported MiMo variables: `MIMO_API_KEY`, `XIAOMI_MIMO_API_KEY`.
+- Supported OpenRouter variable: `OPENROUTER_API_KEY`.
 
 ## Conventions & Gotchas
 
-- **Never commit API keys.** They are currently hardcoded — flag this if asked to add new models.
+- **Never commit API keys.** Keep real secrets in environment variables, `.env`, or `.env.local`.
 - `index.html` has no build step — edit directly.
 - `ocr_clipboard.command` creates temp PNG files during OCR and cleans them up on completion.
