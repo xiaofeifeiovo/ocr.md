@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import sys
 import base64
@@ -10,10 +11,20 @@ import pyperclip
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMP_IMAGE_PATHS = set()
-DASHSCOPE_API_KEY_ENVS = (
-    "DASHSCOPE_API_KEY",
-    "QWEN_API_KEY",
-    "ALIYUN_DASHSCOPE_API_KEY",
+OPENROUTER_API_KEY_ENVS = ("OPENROUTER_API_KEY",)
+DEFAULT_MODEL = "google/gemini-3.1-flash-lite"
+LATEX_OCR_PROMPT = (
+    "你是一个严谨的 OCR 转写工具，任务是将图片中的内容转换为可直接插入 LaTeX 文档的正文片段。\n"
+    "严格规则：\n"
+    "- 只输出 LaTeX 正文片段，不要包含开场白、总结、解释或代码块包裹\n"
+    "- 输出内容默认已经位于 \\begin{document} 内部；不要输出 \\documentclass、导言区、\\begin{document} 或 \\end{document}\n"
+    "- 保留章节标题、段落、列表、表格、脚注、编号、引用标记和公式等原有结构\n"
+    "- 行内公式仅在原文确为行内数学时克制使用 $...$ 包裹\n"
+    "- 独立成行、居中展示或多行推导的公式使用 $$...$$ 包裹；不要使用 \\(...\\) 或 \\[...\\]\n"
+    "- 不要把普通正文整段放进数学环境；文字与公式混排时保持原本语义\n"
+    "- 表格优先使用 tabular、longtable、booktabs 等正文环境，不要额外引入宏包\n"
+    "- 对无法确定的字符保持克制，可用 \\text{[?]} 标记，不要自行补写原文没有的内容\n"
+    "- 不要遗漏任何可见文字、数字、符号或注释"
 )
 
 
@@ -114,19 +125,19 @@ def image_to_base64(image_path):
 
 
 def ocr_image(image_path):
-    """使用 qwen3-vl 对图片进行 OCR 转换"""
+    """使用默认视觉模型对图片进行 OCR 转换"""
     from openai import OpenAI
 
-    api_key, _ = get_api_key(DASHSCOPE_API_KEY_ENVS)
+    api_key, _ = get_api_key(OPENROUTER_API_KEY_ENVS)
     if not api_key:
         raise RuntimeError(
-            f"Missing API key. Set one of: {', '.join(DASHSCOPE_API_KEY_ENVS)}."
+            f"Missing API key. Set one of: {', '.join(OPENROUTER_API_KEY_ENVS)}."
         )
     
     # 初始化OpenAI客户端
     client = OpenAI(
         api_key=api_key,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        base_url="https://openrouter.ai/api/v1"
     )
 
     # 将图片转换为 base64 编码
@@ -135,8 +146,12 @@ def ocr_image(image_path):
 
     # 创建聊天完成请求
     completion = client.chat.completions.create(
-        model="qwen3-vl-flash",
+        model=DEFAULT_MODEL,
         messages=[
+            {
+                "role": "system",
+                "content": LATEX_OCR_PROMPT,
+            },
             {
                 "role": "user",
                 "content": [
@@ -146,28 +161,50 @@ def ocr_image(image_path):
                             "url": image_url
                         },
                     },
-                    {"type": "text", "text": "请将图片中的内容转化为 markdown 格式，只输出 markdown 文本"},
+                    {"type": "text", "text": "请处理这张图片。"},
                 ],
             },
         ],
         stream=False,  # 关闭流式输出
         temperature=0.1,  # 设置较低的温度
-        extra_body={
-            'enable_thinking': False  # 关闭思考参数
-        }
     )
 
     # 返回 OCR 结果
     return completion.choices[0].message.content
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="OCR an image from the clipboard or an explicit image file."
+    )
+    parser.add_argument(
+        "--image",
+        type=Path,
+        help="OCR this image file instead of reading an image from the clipboard.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     load_env_file()
     load_env_file(".env.local")
-    print("正在从剪切板读取内容...")
-    
-    # 检查剪切板内容
-    content_type, content_data = check_clipboard_content()
+
+    if args.image:
+        content_data = str(args.image.expanduser().resolve())
+        if not os.path.isfile(content_data):
+            print(f"图片文件不存在: {content_data}")
+            return 1
+        if not is_image_file(content_data):
+            print(f"文件不是有效图片: {content_data}")
+            return 1
+        print(f"正在读取图片文件: {content_data}")
+        content_type = 'image'
+    else:
+        print("正在从剪切板读取内容...")
+
+        # 检查剪切板内容
+        content_type, content_data = check_clipboard_content()
     
     if content_type == 'text':
         print("剪切板中是文字内容，退出程序")
@@ -177,7 +214,7 @@ def main():
         
         # 执行 OCR 转换
         try:
-            print("正在使用 qwen3-vl 进行 OCR 转换...")
+            print(f"正在使用 {DEFAULT_MODEL} 进行 OCR 转换...")
             ocr_result = ocr_image(content_data)
             
             if not ocr_result or ocr_result.isspace():
