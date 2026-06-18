@@ -10,7 +10,7 @@ Two components share API models and prompts:
 | `server.py` | FastAPI web server (serves `index.html`, provides `POST /api/ocr`) |
 | `index.html` | Single-page UI (drag-drop / paste / upload), pure HTML+CSS+JS, no build step |
 
-Supporting files: `ocr_clipboard.command` (standalone CLI clipboard OCR), `screenshot_ocr.command` (macOS region screenshot OCR launcher), `MACOS_SHORTCUT.md` (macOS shortcut setup), `start_server.command` (macOS one-click local server launcher), `start_server.bat` (Windows one-click local server launcher), `ocr_clipboard.bat` (Windows clipboard OCR launcher), `framework.md` (original requirements), `qwenomni.md` (Qwen Omni reference notes).
+Supporting files: `ocr_clipboard.command` (standalone CLI clipboard OCR), `screenshot_ocr.command` (macOS region screenshot OCR launcher), `build_macos_hotkey_app.command` (macOS menu-bar hotkey app builder), `MACOS_APP.md` (standalone macOS app setup), `MACOS_SHORTCUT.md` (macOS shortcut setup), `start_server.command` (macOS one-click local server launcher), `start_server.bat` (Windows one-click local server launcher), `ocr_clipboard.bat` (Windows clipboard OCR launcher), `framework.md` (original requirements), `qwenomni.md` (Qwen Omni reference notes).
 
 ## Dependencies
 
@@ -34,6 +34,7 @@ pip install fastapi uvicorn openai pillow pyperclip pymupdf python-multipart
 | Start web server on Windows | double-click `start_server.bat` |
 | Run clipboard CLI | `python ocr_clipboard.command` or double-click on macOS |
 | Run macOS screenshot OCR | `./screenshot_ocr.command` |
+| Build macOS hotkey app | `./build_macos_hotkey_app.command` |
 | Run clipboard CLI on Windows | double-click `ocr_clipboard.bat` |
 
 There are **no** test, lint, typecheck, or build commands configured.
