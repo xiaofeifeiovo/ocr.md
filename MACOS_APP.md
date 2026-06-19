@@ -33,6 +33,22 @@ open "dist/Screenshot OCR.app"
 
 When the app is running, an `OCR` item appears in the macOS menu bar.
 
+## Build DMG
+
+To create an installable disk image:
+
+```bash
+./build_macos_dmg.command
+```
+
+The DMG is created at:
+
+```text
+dist/Screenshot OCR.dmg
+```
+
+Open the DMG and drag `Screenshot OCR.app` to `Applications`.
+
 ## Login Item
 
 To keep the shortcut available after reboot:
