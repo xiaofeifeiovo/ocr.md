@@ -1,4 +1,5 @@
 .env
+*.tex
 .env.*
 !.env.example
 .DS_Store
