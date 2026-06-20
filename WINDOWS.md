@@ -45,3 +45,33 @@ http://127.0.0.1:8080
 ## 4. 使用剪贴板 OCR
 
 复制一张图片或图片文件后，双击 `ocr_clipboard.bat`。识别完成后，结果会自动复制回剪贴板。
+
+## 5. Windows 安装版：Ctrl+Shift+6 截图 OCR
+
+安装版会启动一个 `OCR Clipboard` 桌面程序。用户在程序中配置 API Key、
+模型、输出格式和可选提示词后，按：
+
+```text
+Ctrl+Shift+6
+```
+
+拖动选择截图区域，松开鼠标后会进行 AI OCR，并把结果复制到剪贴板。
+默认输出格式是 `LaTeX`。
+
+程序内可以选择“开机自动启动”，也可以选择“开机自启时静默启动”。
+静默启动会在登录后隐藏设置窗口，但热键仍然可用；再次打开程序会唤出已运行窗口。
+OCR 完成后会显示系统通知，并将结果复制到剪贴板。
+
+构建可执行文件：
+
+```text
+build_windows_app.bat
+```
+
+构建安装包：
+
+```text
+build_windows_installer.bat
+```
+
+更多说明见 `WINDOWS_HOTKEY.md`。
