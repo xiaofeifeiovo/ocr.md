@@ -50,6 +50,8 @@ Screenshot OCR（截图 OCR）
 使用：
 - 按 Command-Shift-6，框选屏幕区域。
 - 应用自动进行 AI OCR，并把结果复制到剪贴板，完成后弹出提示。
+- 首次截图时，macOS 可能会要求 “屏幕录制/截屏” 权限。
+  请允许 “Screenshot OCR”，然后退出并重新打开应用。
 
 菜单（点击菜单栏图标）：
 - 立即截图 OCR
@@ -62,6 +64,11 @@ Screenshot OCR（截图 OCR）
 - 若 Command-Shift-6 被系统占用，请在
   “系统设置 > 键盘 > 键盘快捷键 > 截屏” 中关闭冲突项，
   然后在菜单中重新启用快捷键。
+- 若 “系统设置 > 隐私与安全性 > 屏幕录制” 中已经允许
+  “Screenshot OCR” 但应用仍继续弹权限提示，通常是旧构建的
+  macOS TCC 权限记录与当前应用签名不匹配。退出应用后在终端运行：
+  tccutil reset ScreenCapture local.ocrclipboard.hotkey
+  然后重新打开应用并再次授权。
 - 需要 macOS 13 (Ventura) 或更高版本。
 EOF_README
 

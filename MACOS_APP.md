@@ -24,9 +24,10 @@ the app stays consistent with the web and Windows builds.
   - launch at login + silent launch (menu-bar only)
 - Menu toggle to enable/disable the `Command-Shift-6` hotkey.
 
-No special permissions are required: the interactive `screencapture` flow does
-not need Screen Recording permission, and the Carbon hotkey does not need
-Accessibility/Input Monitoring permission.
+The first capture may require Screen Recording permission on modern macOS. The
+app preflights that permission before showing its native selection overlay and
+captures the selected region itself with CoreGraphics. The Carbon hotkey does
+not need Accessibility/Input Monitoring permission.
 
 ## Build the app
 
@@ -58,6 +59,8 @@ drag `Screenshot OCR.app` to `Applications`.
    format, then click **保存配置**.
 3. Press `Command-Shift-6` to capture a region. The result is copied to the
    clipboard and a confirmation appears on screen.
+4. If macOS asks for Screen Recording permission, allow `Screenshot OCR`, then
+   quit and reopen the app before capturing again.
 
 ## Launch at login
 
@@ -71,6 +74,25 @@ directly in the menu bar without opening the panel.
 If `Command-Shift-6` is already taken, the app shows a warning. Disable the
 conflicting shortcut in `System Settings > Keyboard > Keyboard Shortcuts`, then
 re-enable the hotkey from the menu.
+
+## Screen Recording permission
+
+The local fallback build uses ad-hoc signing. The build script embeds a stable
+designated requirement for `local.ocrclipboard.hotkey` so macOS TCC grants do not
+break on every rebuild. For distribution, set `CODESIGN_IDENTITY` to a Developer
+ID or other stable signing identity before building:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build_macos_dmg.command
+```
+
+If System Settings already shows `Screenshot OCR` as allowed but the app still
+prompts for permission, reset the stale TCC record, reopen the app, and grant it
+again:
+
+```bash
+tccutil reset ScreenCapture local.ocrclipboard.hotkey
+```
 
 ## Configuration storage
 

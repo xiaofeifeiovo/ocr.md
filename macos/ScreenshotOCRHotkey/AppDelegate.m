@@ -4,11 +4,136 @@
 #import "OCREngine.h"
 #import "SettingsWindowController.h"
 
+#import <CoreGraphics/CoreGraphics.h>
 #import <ServiceManagement/ServiceManagement.h>
 
 static const OSType HotKeySignature =
     ((OSType)'S' << 24) | ((OSType)'O' << 16) | ((OSType)'C' << 8) | (OSType)'R';
 static const UInt32 HotKeyIDValue = 1;
+
+static NSRect OCRStandardizedRect(NSRect rect) {
+    if (rect.size.width < 0) {
+        rect.origin.x += rect.size.width;
+        rect.size.width = -rect.size.width;
+    }
+    if (rect.size.height < 0) {
+        rect.origin.y += rect.size.height;
+        rect.size.height = -rect.size.height;
+    }
+    return rect;
+}
+
+typedef void (^OCRSelectionCompletion)(NSRect selectedRect, BOOL cancelled);
+
+@interface OCRSelectionWindow : NSWindow
+@end
+
+@implementation OCRSelectionWindow
+
+- (BOOL)canBecomeKeyWindow {
+    return YES;
+}
+
+- (BOOL)canBecomeMainWindow {
+    return YES;
+}
+
+@end
+
+@interface OCRSelectionView : NSView
+@property(nonatomic, copy) OCRSelectionCompletion completion;
+@property(nonatomic, assign) NSPoint dragStart;
+@property(nonatomic, assign) NSPoint dragCurrent;
+@property(nonatomic, assign) BOOL dragging;
+@end
+
+@implementation OCRSelectionView
+
+- (BOOL)acceptsFirstResponder {
+    return YES;
+}
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)resetCursorRects {
+    [self addCursorRect:self.bounds cursor:NSCursor.crosshairCursor];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [super drawRect:dirtyRect];
+
+    [[NSColor colorWithWhite:0.0 alpha:0.25] setFill];
+    NSRectFillUsingOperation(self.bounds, NSCompositingOperationSourceOver);
+
+    if (!self.dragging) {
+        return;
+    }
+
+    NSRect selection = NSIntegralRect(OCRStandardizedRect(
+        NSMakeRect(self.dragStart.x,
+                   self.dragStart.y,
+                   self.dragCurrent.x - self.dragStart.x,
+                   self.dragCurrent.y - self.dragStart.y)));
+
+    [[NSColor clearColor] setFill];
+    NSRectFillUsingOperation(selection, NSCompositingOperationClear);
+
+    NSBezierPath *border = [NSBezierPath bezierPathWithRect:selection];
+    border.lineWidth = 2.0;
+    [[NSColor colorWithCalibratedRed:0.2 green:0.55 blue:1.0 alpha:1.0] setStroke];
+    [border stroke];
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    self.dragStart = [self convertPoint:event.locationInWindow fromView:nil];
+    self.dragCurrent = self.dragStart;
+    self.dragging = YES;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    if (!self.dragging) {
+        return;
+    }
+    self.dragCurrent = [self convertPoint:event.locationInWindow fromView:nil];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    if (!self.dragging) {
+        if (self.completion) {
+            self.completion(NSZeroRect, YES);
+        }
+        return;
+    }
+
+    self.dragCurrent = [self convertPoint:event.locationInWindow fromView:nil];
+    self.dragging = NO;
+
+    NSRect selection = NSIntegralRect(OCRStandardizedRect(
+        NSMakeRect(self.dragStart.x,
+                   self.dragStart.y,
+                   self.dragCurrent.x - self.dragStart.x,
+                   self.dragCurrent.y - self.dragStart.y)));
+    BOOL cancelled = selection.size.width < 4 || selection.size.height < 4;
+    if (self.completion) {
+        self.completion(selection, cancelled);
+    }
+}
+
+- (void)keyDown:(NSEvent *)event {
+    if (event.keyCode == kVK_Escape) {
+        if (self.completion) {
+            self.completion(NSZeroRect, YES);
+        }
+        return;
+    }
+    [super keyDown:event];
+}
+
+@end
 
 @interface AppDelegate ()
 @property(nonatomic, strong) NSStatusItem *statusItem;
@@ -23,6 +148,7 @@ static const UInt32 HotKeyIDValue = 1;
 @property(nonatomic, strong) NSTextField *hudLabel;
 @property(nonatomic, strong) NSProgressIndicator *hudSpinner;
 @property(nonatomic, strong) NSTimer *hudTimer;
+@property(nonatomic, strong) NSWindow *selectionWindow;
 
 // Menu items whose state is refreshed when the menu opens.
 @property(nonatomic, strong) NSMenuItem *hotkeyMenuItem;
@@ -51,6 +177,7 @@ static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef event, v
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     self.settings = [OCRSettings loadSettings];
+    [self setupMainMenu];
     [self setupStatusItem];
 
     if (self.settings.hotkeyEnabled) {
@@ -63,10 +190,50 @@ static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef event, v
     if (!self.settings.silentLaunch || !hasKey) {
         [self showSettings:nil];
     }
+
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--capture-now"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self runCapture];
+        });
+    }
 }
 
 - (void)applicationWillTerminate:(NSNotification *)notification {
     [self unregisterHotKey];
+}
+
+#pragma mark - Main menu (enables Cut/Copy/Paste in text fields)
+
+// An LSUIElement app has no main menu, so the standard ⌘C/⌘V/⌘X/⌘A key
+// equivalents have nowhere to be dispatched and text-field editing breaks.
+// Installing a main menu with the standard Edit items routes those shortcuts to
+// the field editor, even though the menu bar itself stays hidden.
+- (void)setupMainMenu {
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:appMenuItem];
+    NSMenu *appMenu = [[NSMenu alloc] init];
+    [appMenu addItemWithTitle:@"隐藏" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+    [appMenu addItemWithTitle:@"退出 Screenshot OCR" action:@selector(terminate:) keyEquivalent:@"q"];
+    appMenuItem.submenu = appMenu;
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    [mainMenu addItem:editMenuItem];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"编辑"];
+    [editMenu addItemWithTitle:@"撤销" action:@selector(undo:) keyEquivalent:@"z"];
+    NSMenuItem *redoItem = [editMenu addItemWithTitle:@"重做" action:@selector(redo:) keyEquivalent:@"z"];
+    redoItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"剪切" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"拷贝" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"粘贴" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"全选" action:@selector(selectAll:) keyEquivalent:@"a"];
+    editMenuItem.submenu = editMenu;
+
+    [NSApp setMainMenu:mainMenu];
 }
 
 #pragma mark - Status item + menu
@@ -185,52 +352,200 @@ static OSStatus HotKeyHandler(EventHandlerCallRef nextHandler, EventRef event, v
         return;
     }
 
+    if (![self ensureScreenCaptureAccess]) {
+        return;
+    }
+
     self.busy = YES;
+    [self beginNativeRegionSelection];
+}
 
-    NSString *tempPath = [NSTemporaryDirectory()
-        stringByAppendingPathComponent:[NSString stringWithFormat:@"ocr_%@.png",
-                                            [[NSUUID UUID] UUIDString]]];
+- (void)beginNativeRegionSelection {
+    [self.hudTimer invalidate];
+    self.hudTimer = nil;
+    [self.hudWindow orderOut:nil];
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSTask *task = [[NSTask alloc] init];
-        task.executableURL = [NSURL fileURLWithPath:@"/usr/sbin/screencapture"];
-        task.arguments = @[@"-i", @"-s", @"-x", @"-tpng", tempPath];
+    NSRect frame = NSZeroRect;
+    for (NSScreen *screen in NSScreen.screens) {
+        frame = NSIsEmptyRect(frame) ? screen.frame : NSUnionRect(frame, screen.frame);
+    }
+    if (NSIsEmptyRect(frame)) {
+        self.busy = NO;
+        [self showHUDText:@"无法读取屏幕信息" spinner:NO autoHide:YES];
+        return;
+    }
 
-        NSError *launchError = nil;
-        BOOL launched = [task launchAndReturnError:&launchError];
-        if (launched) {
-            [task waitUntilExit];
+    OCRSelectionWindow *window = [[OCRSelectionWindow alloc]
+        initWithContentRect:frame
+                  styleMask:NSWindowStyleMaskBorderless
+                    backing:NSBackingStoreBuffered
+                      defer:NO];
+    window.level = NSScreenSaverWindowLevel;
+    window.opaque = NO;
+    window.backgroundColor = NSColor.clearColor;
+    window.hasShadow = NO;
+    window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                NSWindowCollectionBehaviorFullScreenAuxiliary |
+                                NSWindowCollectionBehaviorStationary;
+
+    OCRSelectionView *view = [[OCRSelectionView alloc] initWithFrame:NSMakeRect(0, 0,
+                                                                                frame.size.width,
+                                                                                frame.size.height)];
+    __weak typeof(self) weakSelf = self;
+    __weak NSWindow *weakWindow = window;
+    view.completion = ^(NSRect selectedRect, BOOL cancelled) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf == nil) {
+            return;
         }
+        NSWindow *selectionWindow = weakWindow;
+        NSRect globalRect = selectedRect;
+        globalRect.origin.x += selectionWindow.frame.origin.x;
+        globalRect.origin.y += selectionWindow.frame.origin.y;
+        [strongSelf finishNativeRegionSelectionWithRect:globalRect cancelled:cancelled];
+    };
+    window.contentView = view;
+    self.selectionWindow = window;
 
-        NSFileManager *fm = NSFileManager.defaultManager;
-        NSNumber *size = nil;
-        [[NSURL fileURLWithPath:tempPath] getResourceValue:&size
-                                                    forKey:NSURLFileSizeKey
-                                                     error:NULL];
-        BOOL hasImage = launched && [fm fileExistsAtPath:tempPath] && size.longLongValue > 0;
+    [NSApp activateIgnoringOtherApps:YES];
+    [window makeKeyAndOrderFront:nil];
+    [window makeFirstResponder:view];
+}
 
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (!launched) {
-                self.busy = NO;
-                [self showHUDText:@"无法启动截图工具" spinner:NO autoHide:YES];
-                return;
+- (void)finishNativeRegionSelectionWithRect:(NSRect)selectedRect cancelled:(BOOL)cancelled {
+    [self.selectionWindow orderOut:nil];
+    self.selectionWindow = nil;
+
+    if (cancelled) {
+        self.busy = NO;
+        [self showHUDText:@"已取消截图" spinner:NO autoHide:YES];
+        return;
+    }
+
+    NSRect captureRect = NSIntegralRect(OCRStandardizedRect(selectedRect));
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.12 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        NSError *captureError = nil;
+        NSData *imageData = [self pngDataForScreenRect:captureRect error:&captureError];
+        if (imageData.length == 0) {
+            self.busy = NO;
+            NSString *message = captureError.localizedDescription ?: @"截图失败";
+            [self showHUDText:message spinner:NO autoHide:YES];
+            if ([message containsString:@"权限"]) {
+                [self showScreenCaptureAccessHelp];
             }
-            if (!hasImage) {
-                // User pressed Esc / cancelled the selection.
-                self.busy = NO;
-                [self showHUDText:@"已取消截图" spinner:NO autoHide:YES];
-                return;
-            }
-            [self runOCRForImageAtPath:tempPath];
-        });
+            return;
+        }
+        [self runOCRForImageData:imageData];
     });
 }
 
-- (void)runOCRForImageAtPath:(NSString *)path {
-    [self showHUDText:@"正在识别截图…" spinner:YES autoHide:NO];
+- (BOOL)ensureScreenCaptureAccess {
+    if (@available(macOS 10.15, *)) {
+        if (CGPreflightScreenCaptureAccess()) {
+            return YES;
+        }
 
-    NSData *imageData = [NSData dataWithContentsOfFile:path];
-    [NSFileManager.defaultManager removeItemAtPath:path error:NULL];
+        BOOL granted = CGRequestScreenCaptureAccess();
+        if (granted || CGPreflightScreenCaptureAccess()) {
+            return YES;
+        }
+
+        [self showScreenCaptureAccessHelp];
+        return NO;
+    }
+    return YES;
+}
+
+- (NSString *)screenCaptureTCCResetCommand {
+    NSString *bundleID = NSBundle.mainBundle.bundleIdentifier ?: @"local.ocrclipboard.hotkey";
+    return [NSString stringWithFormat:@"tccutil reset ScreenCapture %@", bundleID];
+}
+
+- (void)showScreenCaptureAccessHelp {
+    [self showHUDText:@"需要允许截屏权限" spinner:NO autoHide:YES];
+
+    NSString *message = [NSString stringWithFormat:
+        @"请在 系统设置 > 隐私与安全性 > 屏幕录制 中允许 Screenshot OCR，然后退出并重新打开应用。\n\n"
+         "如果列表里已经显示已允许但仍然弹权限提示，通常是旧构建的 TCC 记录和当前 app 签名不匹配。请退出 Screenshot OCR 后运行：\n\n%@",
+        [self screenCaptureTCCResetCommand]];
+
+    [NSApp activateIgnoringOtherApps:YES];
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Screenshot OCR 需要截屏权限";
+    alert.informativeText = message;
+    alert.alertStyle = NSAlertStyleInformational;
+    [alert addButtonWithTitle:@"打开系统设置"];
+    [alert addButtonWithTitle:@"复制重置命令"];
+    [alert addButtonWithTitle:@"稍后处理"];
+
+    NSModalResponse response = [alert runModal];
+    if (response == NSAlertFirstButtonReturn) {
+        NSURL *url = [NSURL URLWithString:
+            @"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"];
+        [NSWorkspace.sharedWorkspace openURL:url];
+    } else if (response == NSAlertSecondButtonReturn) {
+        NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+        [pasteboard clearContents];
+        [pasteboard setString:[self screenCaptureTCCResetCommand] forType:NSPasteboardTypeString];
+        [self showHUDText:@"重置命令已复制" spinner:NO autoHide:YES];
+    }
+}
+
+- (CGRect)coreGraphicsRectForAppKitRect:(NSRect)rect {
+    NSScreen *mainScreen = NSScreen.screens.firstObject ?: NSScreen.mainScreen;
+    CGFloat mainHeight = mainScreen.frame.size.height;
+    return CGRectMake(NSMinX(rect),
+                      mainHeight - NSMaxY(rect),
+                      rect.size.width,
+                      rect.size.height);
+}
+
+- (NSData *)pngDataForScreenRect:(NSRect)rect error:(NSError **)error {
+    if (@available(macOS 10.15, *)) {
+        if (!CGPreflightScreenCaptureAccess()) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"ScreenshotOCR"
+                                             code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: @"缺少截屏权限"}];
+            }
+            return nil;
+        }
+    }
+
+    CGRect cgRect = [self coreGraphicsRectForAppKitRect:rect];
+    CGImageRef image = CGWindowListCreateImage(cgRect,
+                                               kCGWindowListOptionOnScreenOnly,
+                                               kCGNullWindowID,
+                                               kCGWindowImageBestResolution);
+    if (image == NULL) {
+        image = CGWindowListCreateImage(cgRect,
+                                        kCGWindowListOptionOnScreenOnly,
+                                        kCGNullWindowID,
+                                        kCGWindowImageDefault);
+    }
+    if (image == NULL) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"ScreenshotOCR"
+                                         code:2
+                                     userInfo:@{NSLocalizedDescriptionKey: @"截图失败"}];
+        }
+        return nil;
+    }
+
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:image];
+    CGImageRelease(image);
+    NSData *data = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    if (data.length == 0 && error) {
+        *error = [NSError errorWithDomain:@"ScreenshotOCR"
+                                     code:3
+                                 userInfo:@{NSLocalizedDescriptionKey: @"截图编码失败"}];
+    }
+    return data;
+}
+
+- (void)runOCRForImageData:(NSData *)imageData {
+    [self showHUDText:@"正在识别截图…" spinner:YES autoHide:NO];
 
     if (imageData.length == 0) {
         self.busy = NO;

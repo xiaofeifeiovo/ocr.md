@@ -15,6 +15,8 @@ APP_NAME="Screenshot OCR"
 APP_BUNDLE="$DIST_DIR/${APP_NAME}.app"
 EXECUTABLE_NAME="ScreenshotOCRHotkey"
 BUNDLE_ID="local.ocrclipboard.hotkey"
+APP_VERSION="2.2"
+APP_BUILD="4"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$BUILD_DIR" "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
@@ -51,9 +53,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF_PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>2.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
@@ -64,8 +66,26 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF_PLIST
 </plist>
 EOF_PLIST
 
-# Ad-hoc sign so the app runs locally without a developer certificate.
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+# Prefer a real, stable signing identity when one is available. If this is a
+# local build without a certificate, keep the ad-hoc signature's designated
+# requirement stable; otherwise macOS TCC Screen Recording grants can remain
+# visible in System Settings while no longer matching a rebuilt binary.
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$CODESIGN_IDENTITY" ]; then
+    CODESIGN_IDENTITY="$(
+        /usr/bin/security find-identity -v -p codesigning 2>/dev/null |
+            /usr/bin/awk -F'"' '/Developer ID Application/ { print $2; exit }'
+    )"
+fi
+
+if [ -n "$CODESIGN_IDENTITY" ]; then
+    /usr/bin/codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
+    echo "Signed with identity: $CODESIGN_IDENTITY"
+else
+    CODESIGN_REQUIREMENT="=designated => identifier \"$BUNDLE_ID\""
+    /usr/bin/codesign --force --deep --sign - --requirements "$CODESIGN_REQUIREMENT" "$APP_BUNDLE" >/dev/null
+    echo "Signed ad-hoc with stable TCC requirement: $BUNDLE_ID"
+fi
 
 echo "Built: $APP_BUNDLE"
 echo "Open it with:"

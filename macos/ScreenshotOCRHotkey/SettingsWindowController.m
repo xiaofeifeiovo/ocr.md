@@ -2,6 +2,47 @@
 #import "OCRConfig.h"
 #import "OCRSettings.h"
 
+// A window that guarantees the standard editing shortcuts work, even for an
+// LSUIElement app where main-menu key-equivalent dispatch can be unreliable.
+// It forwards ⌘X/C/V/A and ⌘Z/⇧⌘Z straight to the focused field editor.
+@interface OCREditableWindow : NSWindow
+@end
+
+@implementation OCREditableWindow
+
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    NSEventModifierFlags flags =
+        event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    NSString *key = event.charactersIgnoringModifiers.lowercaseString;
+
+    if (flags == NSEventModifierFlagCommand) {
+        SEL action = NULL;
+        if ([key isEqualToString:@"x"]) {
+            action = @selector(cut:);
+        } else if ([key isEqualToString:@"c"]) {
+            action = @selector(copy:);
+        } else if ([key isEqualToString:@"v"]) {
+            action = @selector(paste:);
+        } else if ([key isEqualToString:@"a"]) {
+            action = @selector(selectAll:);
+        } else if ([key isEqualToString:@"z"]) {
+            action = @selector(undo:);
+        }
+        if (action && [NSApp sendAction:action to:nil from:self]) {
+            return YES;
+        }
+    } else if (flags == (NSEventModifierFlagCommand | NSEventModifierFlagShift)) {
+        if ([key isEqualToString:@"z"] &&
+            [NSApp sendAction:@selector(redo:) to:nil from:self]) {
+            return YES;
+        }
+    }
+
+    return [super performKeyEquivalent:event];
+}
+
+@end
+
 @interface SettingsWindowController ()
 @property(nonatomic, strong) OCRSettings *settings;
 @property(nonatomic, strong) NSPopUpButton *modelPopUp;
@@ -20,7 +61,7 @@
 @implementation SettingsWindowController
 
 - (instancetype)initWithSettings:(OCRSettings *)settings {
-    NSWindow *window = [[NSWindow alloc]
+    NSWindow *window = [[OCREditableWindow alloc]
         initWithContentRect:NSMakeRect(0, 0, 540, 640)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                             NSWindowStyleMaskMiniaturizable
