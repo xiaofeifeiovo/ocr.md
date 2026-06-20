@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Build the standalone macOS menu-bar app that registers Command-Shift-6.
+# Build the standalone, self-contained macOS menu-bar app.
+# The app performs screenshot OCR entirely on its own: it registers
+# Command-Shift-6, captures a region, calls the AI OCR API directly, and copies
+# the result to the clipboard. It does not depend on the project's Python scripts.
 
 set -euo pipefail
 
@@ -11,31 +14,20 @@ DIST_DIR="$SCRIPT_DIR/dist"
 APP_NAME="Screenshot OCR"
 APP_BUNDLE="$DIST_DIR/${APP_NAME}.app"
 EXECUTABLE_NAME="ScreenshotOCRHotkey"
-GENERATED_CONFIG="$BUILD_DIR/GeneratedConfig.h"
+BUNDLE_ID="local.ocrclipboard.hotkey"
 
+rm -rf "$APP_BUNDLE"
 mkdir -p "$BUILD_DIR" "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-chmod +x "$SCRIPT_DIR/screenshot_ocr.command" "$SCRIPT_DIR/ocr_clipboard.command"
-
-objc_string() {
-    /usr/bin/python3 -c 'import json, sys; print("@" + json.dumps(sys.argv[1]))' "$1"
-}
-
-cat > "$GENERATED_CONFIG" <<EOF_CONFIG
-#import <Foundation/Foundation.h>
-
-static NSString * const AppDisplayName = $(objc_string "$APP_NAME");
-static NSString * const ProjectPath = $(objc_string "$SCRIPT_DIR");
-static NSString * const DefaultScriptPath = $(objc_string "$SCRIPT_DIR/screenshot_ocr.command");
-EOF_CONFIG
-
+# Compile every Objective-C source file in the app directory.
 /usr/bin/clang \
     -fobjc-arc \
     -O2 \
-    -I "$BUILD_DIR" \
+    -mmacosx-version-min=13.0 \
     -framework Cocoa \
     -framework Carbon \
-    "$SOURCE_DIR/ScreenshotOCRHotkey.m" \
+    -framework ServiceManagement \
+    "$SOURCE_DIR"/*.m \
     -o "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF_PLIST
@@ -45,23 +37,25 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF_PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
+  <string>zh-Hans</string>
   <key>CFBundleExecutable</key>
   <string>$EXECUTABLE_NAME</string>
   <key>CFBundleIdentifier</key>
-  <string>local.ocrclipboard.hotkey</string>
+  <string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key>
+  <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
+  <string>2.0</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
@@ -70,6 +64,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF_PLIST
 </plist>
 EOF_PLIST
 
+# Ad-hoc sign so the app runs locally without a developer certificate.
 /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
 
 echo "Built: $APP_BUNDLE"

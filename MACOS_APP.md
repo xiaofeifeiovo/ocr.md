@@ -1,17 +1,34 @@
-# macOS Hotkey App
+# macOS App
 
-`Screenshot OCR.app` is a standalone menu-bar app for macOS. It registers
-`Command-Shift-6` globally and calls the existing project OCR flow:
+`Screenshot OCR.app` is a **standalone, self-contained** macOS menu-bar app. It
+does not depend on this project's Python scripts, a Python runtime, or any other
+file — users install the single DMG and configure everything inside the app.
 
 ```text
-Command-Shift-6 -> selected screenshot -> LaTeX OCR -> clipboard
+Command-Shift-6 -> select a screen region -> AI OCR -> clipboard -> notification
 ```
 
-The app does not use the Shortcuts app. It still uses this project's
-`screenshot_ocr.command`, which calls `ocr_clipboard.command`, so the OCR model,
-API key loading, and LaTeX prompt stay in one place.
+The OCR model configuration and prompts are a native port of `ocr_core.py`, so
+the app stays consistent with the web and Windows builds.
 
-## Build
+## Features
+
+- Lives in the macOS menu bar (no Dock icon).
+- Global `Command-Shift-6` hotkey: capture a region, OCR it, copy the result to
+  the clipboard, and show an on-screen confirmation.
+- Settings panel (like the web UI):
+  - model selection (Qwen / MiMo / OpenRouter Gemini)
+  - output format: LaTeX / Markdown / 公式识别 / 纯文本
+  - custom system prompt
+  - API keys for DashScope, MiMo, and OpenRouter
+  - launch at login + silent launch (menu-bar only)
+- Menu toggle to enable/disable the `Command-Shift-6` hotkey.
+
+No special permissions are required: the interactive `screencapture` flow does
+not need Screen Recording permission, and the Carbon hotkey does not need
+Accessibility/Input Monitoring permission.
+
+## Build the app
 
 From the project directory:
 
@@ -19,65 +36,65 @@ From the project directory:
 ./build_macos_hotkey_app.command
 ```
 
-The app is created at:
-
-```text
-dist/Screenshot OCR.app
-```
-
-Launch it:
+The app is created at `dist/Screenshot OCR.app`. Launch it with:
 
 ```bash
 open "dist/Screenshot OCR.app"
 ```
 
-When the app is running, an `OCR` item appears in the macOS menu bar.
-
-## Build DMG
-
-To create an installable disk image:
+## Build the DMG
 
 ```bash
 ./build_macos_dmg.command
 ```
 
-The DMG is created at:
+The installable disk image is created at `dist/Screenshot OCR.dmg`. Open it and
+drag `Screenshot OCR.app` to `Applications`.
+
+## First run
+
+1. Open the app. A menu-bar icon appears and the settings panel opens.
+2. Enter the API key for the model you want to use, pick a model and output
+   format, then click **保存配置**.
+3. Press `Command-Shift-6` to capture a region. The result is copied to the
+   clipboard and a confirmation appears on screen.
+
+## Launch at login
+
+Use the **开机自动启动** menu item or the checkbox in the settings panel. This
+uses `SMAppService` (macOS 13+); manage it later in
+`System Settings > General > Login Items`. Enable **开机静默启动** to start
+directly in the menu bar without opening the panel.
+
+## Shortcut conflict
+
+If `Command-Shift-6` is already taken, the app shows a warning. Disable the
+conflicting shortcut in `System Settings > Keyboard > Keyboard Shortcuts`, then
+re-enable the hotkey from the menu.
+
+## Configuration storage
+
+Settings are stored as JSON at:
 
 ```text
-dist/Screenshot OCR.dmg
+~/Library/Application Support/ScreenshotOCR/config.json
 ```
 
-Open the DMG and drag `Screenshot OCR.app` to `Applications`.
+The shape mirrors the Windows app's `config.json`.
 
-## Login Item
-
-To keep the shortcut available after reboot:
-
-1. Click the `OCR` menu-bar item.
-2. Choose `Install Login Item`.
-3. Allow macOS automation permission if prompted.
-
-You can remove it later from the same menu or from
-`System Settings > General > Login Items`.
-
-## Shortcut Conflict
-
-`Command-Shift-6` can conflict with macOS's Touch Bar screenshot shortcut.
-If the app reports that the hotkey is unavailable, disable the conflicting
-system shortcut:
+## Source layout
 
 ```text
-System Settings > Keyboard > Keyboard Shortcuts > Screenshots
+macos/ScreenshotOCRHotkey/
+  main.m                      app entry point
+  AppDelegate.{h,m}           status item, hotkey, capture flow, HUD, login item
+  SettingsWindowController.{h,m}  settings panel
+  OCREngine.{h,m}             native OCR over the chat-completions API
+  OCRSettings.{h,m}           config load/save + API key resolution
+  OCRConfig.{h,m}             model list + prompts (ported from ocr_core.py)
 ```
 
-Then choose `Re-register Command-Shift-6` from the `OCR` menu.
+## Requirements
 
-## Logs
-
-The app writes logs here:
-
-```text
-~/Library/Logs/ScreenshotOCRHotkey.log
-```
-
-Use `Open Log File` from the `OCR` menu to inspect failures.
+- macOS 13 (Ventura) or later.
+- Xcode Command Line Tools (`clang`) to build.
